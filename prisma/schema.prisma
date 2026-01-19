@@ -1,0 +1,302 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Models
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      String   @default("MITRA") // ENUM: SUPER_ADMIN, MITRA
+  status    String   @default("PENDING") // ENUM: PENDING, ACTIVE, SUSPENDED, EXPIRED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Subscription info
+  subscription   Subscription?
+  subscriptionId String?
+
+  // Relations
+  mikrotiks Mikrotik[]
+  invoices  Invoice[]
+  expenses  Expense[]
+  pakets    Paket[]
+  areas     Area[]
+}
+
+model Package {
+  id           Int      @id @default(autoincrement())
+  name         String
+  price        Float
+  maxMikrotik  Int // -1 for unlimited
+  maxCustomers Int // -1 for unlimited
+  features     String   @db.Text // JSON string or comma-separated
+  isPopular    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  packageId Int
+  package   Package  @relation(fields: [packageId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Mikrotik {
+  id       String    @id @default(uuid())
+  name     String
+  ip       String
+  port     Int       @default(8728)
+  username String
+  password String
+  status   String    @default("offline")
+  lastSync DateTime?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  customers   Customer[]
+  pppProfiles PPPProfile[]
+  pppSecrets  PPPSecret[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model PPPProfile {
+  id            String     @id @default(uuid())
+  mikrotikId    String
+  mikrotik      Mikrotik   @relation(fields: [mikrotikId], references: [id], onDelete: Cascade)
+  routerosId    String     @db.VarChar(100) // .id from RouterOS
+  name          String
+  localAddress  String?
+  remoteAddress String?
+  rateLimit     String?
+  price         Float      @default(0) // Harga paket bulanan
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  customers     Customer[]
+
+  @@unique([mikrotikId, name])
+}
+
+model PPPSecret {
+  id            String   @id @default(uuid())
+  mikrotikId    String
+  mikrotik      Mikrotik @relation(fields: [mikrotikId], references: [id], onDelete: Cascade)
+  routerosId    String   @db.VarChar(100) // .id from RouterOS
+  name          String
+  profile       String   @default("default")
+  localAddress  String?
+  remoteAddress String?
+  comment       String?  @db.Text
+  disabled      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([mikrotikId, name])
+}
+
+// Paket WiFi - standalone pricing packages
+model Paket {
+  id          String  @id @default(uuid())
+  name        String // e.g. "Paket 10 Mbps", "Paket Unlimited"
+  description String? @db.Text
+  speed       String? // e.g. "10M/10M", "20M/20M"
+  price       Float // Harga bulanan
+  isActive    Boolean @default(true)
+
+  userId String // Mitra yang punya paket ini
+  user   User   @relation(fields: [userId], references: [id])
+
+  customers Customer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Customer {
+  id             String  @id @default(uuid())
+  name           String
+  address        String? @db.Text
+  phone          String?
+  connectionType String // ENUM: PPPOE, STATIC, HOTSPOT
+
+  // Login auth (for PPPoE)
+  username String // PPP secret name
+  password String? // optional
+
+  // PPPoE profile relation (for Mikrotik config)
+  profileId String?
+  profile   PPPProfile? @relation(fields: [profileId], references: [id])
+
+  // Paket relation (for pricing)
+  paketId String?
+  paket   Paket?  @relation(fields: [paketId], references: [id])
+
+  // IP info (required for STATIC, auto for PPPoE)
+  ipAddress  String?
+  macAddress String?
+
+  // Location
+  areaId    String?
+  area      Area?   @relation(fields: [areaId], references: [id])
+  latitude  Float?
+  longitude Float?
+
+  mikrotikId String
+  mikrotik   Mikrotik @relation(fields: [mikrotikId], references: [id])
+
+  servicePrice Float // Could be from paket or custom
+  dueDate      Int // Day of month (1-31)
+
+  status String @default("ACTIVE") // ACTIVE, ISOLIR, EXPIRED
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  invoices  Invoice[]
+
+  @@unique([mikrotikId, username])
+}
+
+// Area/Wilayah untuk pelanggan
+model Area {
+  id          String  @id @default(uuid())
+  name        String // e.g. "Desa Sukamaju", "RT 01 RW 02"
+  description String? @db.Text
+
+  userId String // Mitra yang punya area ini
+  user   User   @relation(fields: [userId], references: [id])
+
+  customers Customer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Invoice {
+  id        String    @id @default(uuid())
+  invoiceNo String    @unique
+  amount    Float
+  status    String    @default("UNPAID") // UNPAID, PAID, EXPIRED
+  dueDate   DateTime
+  paidAt    DateTime?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  description String   @db.Text
+  amount      Float
+  date        DateTime @default(now())
+  category    String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Bank accounts for payment
+model Bank {
+  id            String   @id @default(uuid())
+  bankName      String
+  accountNumber String
+  accountName   String
+  branch        String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Notification templates for WhatsApp
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  trigger   String   @unique // H-3, H-0, H+1
+  message   String   @db.Text
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// WhatsApp Device untuk multi-device support
+model WhatsAppDevice {
+  id         String    @id @default(uuid())
+  name       String // "HP Admin", "WA Bisnis"
+  sessionId  String    @unique // Session identifier
+  phone      String? // Phone number when connected
+  status     String    @default("disconnected") // connected, disconnected, qr_pending
+  lastActive DateTime?
+
+  userId String // Owner (mitra or admin)
+
+  notifications NotificationLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Notification Log - riwayat semua notifikasi
+model NotificationLog {
+  id            String  @id @default(uuid())
+  type          String // H-3, H-0, H+1, MANUAL, BLAST
+  recipient     String // Phone number
+  recipientName String?
+  message       String  @db.Text
+  status        String  @default("pending") // pending, sent, failed
+  errorMsg      String?
+
+  // Relations
+  deviceId String?
+  device   WhatsAppDevice? @relation(fields: [deviceId], references: [id])
+
+  userId     String // Who sent this
+  customerId String? // Optional customer reference
+
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// Helpdesk Tickets
+model Ticket {
+  id       String @id @default(uuid())
+  ticketNo String @unique
+  subject  String
+  message  String @db.Text
+  priority String @default("MEDIUM") // LOW, MEDIUM, HIGH
+  status   String @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED
+
+  userId String // Mitra who created the ticket
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
