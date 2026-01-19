@@ -26,12 +26,12 @@
   let isGenerating = $state(false);
   let isSendingWA = $state(false);
   let sendingInvoiceId = $state<string | null>(null);
-  
+
   // Month/Year selector
   const now = new Date();
   let selectedMonth = $state(now.getMonth() + 1);
   let selectedYear = $state(now.getFullYear());
-  
+
   const months = [
     { value: 1, label: "Januari" },
     { value: 2, label: "Februari" },
@@ -46,7 +46,7 @@
     { value: 11, label: "November" },
     { value: 12, label: "Desember" },
   ];
-  
+
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i);
 
   function formatCurrency(amount: number) {
@@ -81,7 +81,7 @@
   // Server-side search and filter
   let searchInput = $state("");
   let searchTimeout: any = null;
-  
+
   function handleSearch() {
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
@@ -114,21 +114,21 @@
       alert("Pelanggan tidak punya nomor telepon");
       return;
     }
-    
+
     sendingInvoiceId = invoice.id;
     isSendingWA = true;
-    
+
     try {
       const formData = new FormData();
       formData.append("invoiceId", invoice.id);
       formData.append("customerId", invoice.customer.id);
       formData.append("phone", invoice.customer.phone);
-      
+
       const response = await fetch("?/sendNotaWA", {
         method: "POST",
-        body: formData
+        body: formData,
       });
-      
+
       if (response.ok) {
         alert("Nota berhasil dikirim via WhatsApp!");
       } else {
@@ -152,12 +152,16 @@
 </svelte:head>
 
 <div class="container mx-auto px-4 py-8">
-  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+  <div
+    class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8"
+  >
     <div>
       <h2 class="text-3xl font-bold text-blue-600">Tagihan</h2>
-      <p class="text-slate-500 mt-1">Kelola tagihan pelanggan ({data.totalCount || 0} total)</p>
+      <p class="text-slate-500 mt-1">
+        Kelola tagihan pelanggan ({data.totalCount || 0} total)
+      </p>
     </div>
-    
+
     <!-- Generate Form with Month/Year Selector -->
     <form
       action="?/generate"
@@ -171,7 +175,9 @@
       }}
       class="flex items-center gap-3"
     >
-      <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+      <div
+        class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5"
+      >
         <Calendar size={16} class="text-slate-400" />
         <select
           name="month"
@@ -192,7 +198,7 @@
           {/each}
         </select>
       </div>
-      
+
       <button
         type="submit"
         disabled={isGenerating}
@@ -215,9 +221,13 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm text-slate-500 mb-1">Belum Dibayar</p>
-          <p class="text-2xl font-bold text-slate-900">{data.stats.totalUnpaid}</p>
+          <p class="text-2xl font-bold text-slate-900">
+            {data.stats.totalUnpaid}
+          </p>
         </div>
-        <div class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+        <div
+          class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center"
+        >
           <Clock size={20} class="text-amber-600" />
         </div>
       </div>
@@ -226,9 +236,13 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm text-slate-500 mb-1">Sudah Dibayar</p>
-          <p class="text-2xl font-bold text-slate-900">{data.stats.totalPaid}</p>
+          <p class="text-2xl font-bold text-slate-900">
+            {data.stats.totalPaid}
+          </p>
         </div>
-        <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+        <div
+          class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center"
+        >
           <CheckCircle size={20} class="text-emerald-600" />
         </div>
       </div>
@@ -237,9 +251,13 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm text-slate-500 mb-1">Total Outstanding</p>
-          <p class="text-2xl font-bold text-slate-900">{formatCurrency(data.stats.totalAmount)}</p>
+          <p class="text-2xl font-bold text-slate-900">
+            {formatCurrency(data.stats.totalAmount)}
+          </p>
         </div>
-        <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+        <div
+          class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center"
+        >
           <DollarSign size={20} class="text-blue-600" />
         </div>
       </div>
@@ -249,7 +267,10 @@
   <!-- Filters -->
   <div class="flex flex-wrap gap-4 mb-6">
     <div class="relative flex-1 max-w-md">
-      <Search size={18} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <Search
+        size={18}
+        class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+      />
       <input
         type="text"
         placeholder="Cari invoice atau pelanggan..."
@@ -268,7 +289,8 @@
         Semua
       </button>
       <button
-        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {currentStatus === 'UNPAID'
+        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {currentStatus ===
+        'UNPAID'
           ? 'bg-amber-500 text-white'
           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}"
         onclick={() => setStatusFilter("UNPAID")}
@@ -276,7 +298,8 @@
         Belum Bayar
       </button>
       <button
-        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {currentStatus === 'PAID'
+        class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {currentStatus ===
+        'PAID'
           ? 'bg-emerald-500 text-white'
           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}"
         onclick={() => setStatusFilter("PAID")}
@@ -300,42 +323,72 @@
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-slate-200 bg-slate-50">
-              <th class="px-6 py-4 text-left font-semibold text-slate-700">No. Invoice</th>
-              <th class="px-6 py-4 text-left font-semibold text-slate-700">Pelanggan</th>
-              <th class="px-6 py-4 text-left font-semibold text-slate-700">Jumlah</th>
-              <th class="px-6 py-4 text-left font-semibold text-slate-700">Jatuh Tempo</th>
-              <th class="px-6 py-4 text-center font-semibold text-slate-700">Status</th>
-              <th class="px-6 py-4 text-center font-semibold text-slate-700">Aksi</th>
+              <th class="px-6 py-4 text-left font-semibold text-slate-700"
+                >No. Invoice</th
+              >
+              <th class="px-6 py-4 text-left font-semibold text-slate-700"
+                >Pelanggan</th
+              >
+              <th class="px-6 py-4 text-left font-semibold text-slate-700"
+                >Jumlah</th
+              >
+              <th class="px-6 py-4 text-left font-semibold text-slate-700"
+                >Jatuh Tempo</th
+              >
+              <th class="px-6 py-4 text-center font-semibold text-slate-700"
+                >Status</th
+              >
+              <th class="px-6 py-4 text-center font-semibold text-slate-700"
+                >Aksi</th
+              >
             </tr>
           </thead>
           <tbody>
             {#each data.invoices as invoice}
               {@const statusBadge = getStatusBadge(invoice.status)}
-              <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+              <tr
+                class="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+              >
                 <td class="px-6 py-4">
-                  <span class="font-mono font-medium text-slate-900">{invoice.invoiceNo}</span>
+                  <span class="font-mono font-medium text-slate-900"
+                    >{invoice.invoiceNo}</span
+                  >
                 </td>
                 <td class="px-6 py-4">
                   {#if invoice.customer}
                     <div class="flex items-center gap-2">
-                      <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                      <div
+                        class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center"
+                      >
                         <User size={14} class="text-blue-600" />
                       </div>
                       <div>
-                        <p class="font-medium text-slate-900">{invoice.customer.name}</p>
-                        <p class="text-xs text-slate-500">{invoice.customer.phone || "-"}</p>
+                        <p class="font-medium text-slate-900">
+                          {invoice.customer.name}
+                        </p>
+                        <p class="text-xs text-slate-500">
+                          {invoice.customer.phone || "-"}
+                        </p>
                       </div>
                     </div>
                   {:else}
-                    <span class="text-slate-400 text-xs italic">Tidak terhubung</span>
+                    <span class="text-slate-400 text-xs italic"
+                      >Tidak terhubung</span
+                    >
                   {/if}
                 </td>
                 <td class="px-6 py-4">
-                  <span class="font-semibold text-slate-900">{formatCurrency(invoice.amount)}</span>
+                  <span class="font-semibold text-slate-900"
+                    >{formatCurrency(invoice.amount)}</span
+                  >
                 </td>
-                <td class="px-6 py-4 text-slate-600">{formatDate(invoice.dueDate)}</td>
+                <td class="px-6 py-4 text-slate-600"
+                  >{formatDate(invoice.dueDate)}</td
+                >
                 <td class="px-6 py-4 text-center">
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {statusBadge.class}">
+                  <span
+                    class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium {statusBadge.class}"
+                  >
                     {statusBadge.label}
                   </span>
                 </td>
@@ -377,7 +430,9 @@
                       <button
                         class="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Hapus"
-                        onclick={(e) => !confirm("Yakin hapus tagihan ini?") && e.preventDefault()}
+                        onclick={(e) =>
+                          !confirm("Yakin hapus tagihan ini?") &&
+                          e.preventDefault()}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -389,38 +444,41 @@
           </tbody>
         </table>
       </div>
-      
+
       <!-- Pagination -->
       {#if data.totalPages > 1}
-        <div class="flex items-center justify-between px-6 py-4 border-t border-slate-200">
+        <div
+          class="flex items-center justify-between px-6 py-4 border-t border-slate-200"
+        >
           <p class="text-sm text-slate-600">
             Halaman {data.currentPage} dari {data.totalPages}
           </p>
           <div class="flex items-center gap-2">
             <button
-              class="p-2 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              class="p-2 rounded-lg text-black border border-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={data.currentPage <= 1}
               onclick={() => goToPage(data.currentPage - 1)}
             >
               <ChevronLeft size={16} />
             </button>
-            
-            {#each Array.from({ length: Math.min(5, data.totalPages) }, (_, i) => {
-              const start = Math.max(1, data.currentPage - 2);
-              return start + i;
-            }).filter(p => p <= data.totalPages) as pageNum}
+
+            {#each Array.from( { length: Math.min(5, data.totalPages) }, (_, i) => {
+                const start = Math.max(1, data.currentPage - 2);
+                return start + i;
+              }, ).filter((p) => p <= data.totalPages) as pageNum}
               <button
-                class="w-9 h-9 rounded-lg text-sm font-medium {pageNum === data.currentPage
+                class="w-9 h-9 rounded-lg text-sm font-medium {pageNum ===
+                data.currentPage
                   ? 'bg-blue-500 text-white'
-                  : 'border border-slate-300 hover:bg-slate-100'}"
+                  : 'border border-slate-300 hover:bg-slate-100 text-black'}"
                 onclick={() => goToPage(pageNum)}
               >
                 {pageNum}
               </button>
             {/each}
-            
+
             <button
-              class="p-2 rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              class="p-2 text-black rounded-lg border border-slate-300 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={data.currentPage >= data.totalPages}
               onclick={() => goToPage(data.currentPage + 1)}
             >

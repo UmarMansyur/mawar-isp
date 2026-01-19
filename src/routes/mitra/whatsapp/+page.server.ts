@@ -1,31 +1,44 @@
 import { prisma } from "$lib/server/prisma";
 import { fail } from "@sveltejs/kit";
 import type { PageServerLoad, Actions } from "./$types.js";
-import { initWithQR, initWithPhone, disconnectWhatsApp, getQRCode, getConnectionStatus, cleanupSession } from "$lib/server/whatsapp";
-import { randomUUID } from "crypto";
+import crypto from "crypto";
+
+const WA_API_URL = "http://localhost:3001";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = locals.user;
   if (!user) return { devices: [] };
 
+  // Get all devices for this user
   const devices = await prisma.whatsAppDevice.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
-    include: {
-      _count: {
-        select: { notifications: true }
-      }
-    }
   });
 
-  // Attach QR codes and real-time status
-  const devicesWithStatus = devices.map(device => ({
-    ...device,
-    qrCode: getQRCode(device.sessionId),
-    liveStatus: getConnectionStatus(device.sessionId)
-  }));
+  // Enhance with live status from WA server
+  const enhancedDevices = await Promise.all(
+    devices.map(async (device) => {
+      try {
+        const res = await fetch(
+          `${WA_API_URL}/devices/${device.sessionId}/status`,
+        );
+        const data = await res.json();
+        return {
+          ...device,
+          liveStatus: data.status || device.status,
+          livePhone: data.phone || device.phone,
+        };
+      } catch {
+        return {
+          ...device,
+          liveStatus: device.status,
+          livePhone: device.phone,
+        };
+      }
+    }),
+  );
 
-  return { devices: devicesWithStatus };
+  return { devices: enhancedDevices };
 };
 
 export const actions: Actions = {
@@ -41,46 +54,69 @@ export const actions: Actions = {
       return fail(400, { error: "Nama device harus diisi" });
     }
 
-    const sessionId = `wa_${user.id}_${randomUUID()}`;
+    // Generate unique session ID
+    const sessionId = `device_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
-    const device = await prisma.whatsAppDevice.create({
-      data: {
-        name,
-        sessionId,
-        userId: user.id,
-        status: "disconnected"
-      }
-    });
+    try {
+      await prisma.whatsAppDevice.create({
+        data: {
+          name,
+          sessionId,
+          userId: user.id,
+          status: "disconnected",
+        },
+      });
 
-    return { success: true, deviceId: device.id };
+      return { success: true, message: "Device berhasil ditambahkan" };
+    } catch (e: any) {
+      return fail(500, { error: e.message });
+    }
   },
 
-  // Start pairing with QR code
-  startPairing: async ({ request, locals }) => {
+  // Connect device (start QR)
+  connectDevice: async ({ request, locals }) => {
     const user = locals.user;
     if (!user) return fail(401, { error: "Unauthorized" });
 
     const formData = await request.formData();
     const deviceId = formData.get("deviceId") as string;
 
-    const device = await prisma.whatsAppDevice.findFirst({
-      where: { id: deviceId, userId: user.id }
+    if (!deviceId) {
+      return fail(400, { error: "Device ID required" });
+    }
+
+    const device = await prisma.whatsAppDevice.findUnique({
+      where: { id: deviceId },
     });
 
-    if (!device) {
-      return fail(404, { error: "Device not found" });
+    if (!device || device.userId !== user.id) {
+      return fail(404, { error: "Device tidak ditemukan" });
     }
 
-    const result = await initWithQR(device.sessionId, user.id);
+    try {
+      const res = await fetch(
+        `${WA_API_URL}/devices/${device.sessionId}/connect`,
+        {
+          method: "POST",
+        },
+      );
+      const data = await res.json();
 
-    if (result.success) {
-      return { success: true, message: "QR Code sedang dibuat..." };
+      if (data.success) {
+        return {
+          success: true,
+          message: "Menghubungkan...",
+          sessionId: device.sessionId,
+        };
+      }
+      return fail(500, { error: data.error || "Gagal menghubungkan" });
+    } catch (e: any) {
+      return fail(500, { error: e.message });
     }
-    return fail(500, { error: result.error });
   },
 
-  // Start pairing with phone number
-  startPhonePairing: async ({ request, locals }) => {
+  // Request pairing code
+  requestPairingCode: async ({ request, locals }) => {
     const user = locals.user;
     if (!user) return fail(401, { error: "Unauthorized" });
 
@@ -88,77 +124,78 @@ export const actions: Actions = {
     const deviceId = formData.get("deviceId") as string;
     const phoneNumber = formData.get("phoneNumber") as string;
 
-    if (!phoneNumber) {
-      return fail(400, { error: "Nomor telepon harus diisi" });
+    if (!deviceId || !phoneNumber) {
+      return fail(400, { error: "Device ID dan nomor HP harus diisi" });
     }
 
-    const device = await prisma.whatsAppDevice.findFirst({
-      where: { id: deviceId, userId: user.id }
-    });
-
-    if (!device) {
-      return fail(404, { error: "Device not found" });
-    }
-
-    const result = await initWithPhone(device.sessionId, user.id, phoneNumber);
-
-    if (result.success) {
-      return { success: true, pairingCode: result.pairingCode };
-    }
-    return fail(500, { error: result.error });
-  },
-
-  // Get QR code for polling
-  getQR: async ({ request, locals }) => {
-    const user = locals.user;
-    if (!user) return fail(401, { error: "Unauthorized" });
-
-    const formData = await request.formData();
-    const deviceId = formData.get("deviceId") as string;
-
-    const device = await prisma.whatsAppDevice.findFirst({
-      where: { id: deviceId, userId: user.id }
-    });
-
-    if (!device) {
-      return fail(404, { error: "Device not found" });
-    }
-
-    const qrCode = getQRCode(device.sessionId);
-    const status = getConnectionStatus(device.sessionId);
-
-    // Also get DB status
-    const dbDevice = await prisma.whatsAppDevice.findUnique({
+    const device = await prisma.whatsAppDevice.findUnique({
       where: { id: deviceId },
-      select: { status: true }
     });
 
-    return {
-      success: true,
-      qrCode,
-      device,
-      status: dbDevice?.status || status
-    };
+    if (!device || device.userId !== user.id) {
+      return fail(404, { error: "Device tidak ditemukan" });
+    }
+
+    try {
+      const res = await fetch(
+        `${WA_API_URL}/devices/${device.sessionId}/pairing-code`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phoneNumber }),
+        },
+      );
+      const data = await res.json();
+
+      if (data.success) {
+        return {
+          success: true,
+          pairingCode: data.pairingCode,
+          message: data.message,
+        };
+      }
+      return fail(500, {
+        error: data.error || "Gagal mendapatkan pairing code",
+      });
+    } catch (e: any) {
+      return fail(500, { error: e.message });
+    }
   },
 
   // Disconnect device
-  disconnect: async ({ request, locals }) => {
+  disconnectDevice: async ({ request, locals }) => {
     const user = locals.user;
     if (!user) return fail(401, { error: "Unauthorized" });
 
     const formData = await request.formData();
     const deviceId = formData.get("deviceId") as string;
 
-    const device = await prisma.whatsAppDevice.findFirst({
-      where: { id: deviceId, userId: user.id }
-    });
-
-    if (!device) {
-      return fail(404, { error: "Device not found" });
+    if (!deviceId) {
+      return fail(400, { error: "Device ID required" });
     }
 
-    await disconnectWhatsApp(device.sessionId);
-    return { success: true };
+    const device = await prisma.whatsAppDevice.findUnique({
+      where: { id: deviceId },
+    });
+
+    if (!device || device.userId !== user.id) {
+      return fail(404, { error: "Device tidak ditemukan" });
+    }
+
+    try {
+      await fetch(`${WA_API_URL}/devices/${device.sessionId}/disconnect`, {
+        method: "POST",
+      });
+
+      await prisma.whatsAppDevice.update({
+        where: { id: deviceId },
+        data: { status: "disconnected", phone: null },
+      });
+
+      return { success: true, message: "Device disconnected" };
+    } catch (e: any) {
+      return fail(500, { error: e.message });
+    }
   },
 
   // Delete device
@@ -169,18 +206,32 @@ export const actions: Actions = {
     const formData = await request.formData();
     const deviceId = formData.get("deviceId") as string;
 
-    const device = await prisma.whatsAppDevice.findFirst({
-      where: { id: deviceId, userId: user.id }
-    });
-
-    if (device) {
-      await cleanupSession(device.sessionId);
+    if (!deviceId) {
+      return fail(400, { error: "Device ID required" });
     }
 
-    await prisma.whatsAppDevice.delete({
-      where: { id: deviceId }
+    const device = await prisma.whatsAppDevice.findUnique({
+      where: { id: deviceId },
     });
 
-    return { success: true };
-  }
+    if (!device || device.userId !== user.id) {
+      return fail(404, { error: "Device tidak ditemukan" });
+    }
+
+    try {
+      // Disconnect first
+      await fetch(`${WA_API_URL}/devices/${device.sessionId}/disconnect`, {
+        method: "POST",
+      });
+
+      // Delete from database
+      await prisma.whatsAppDevice.delete({
+        where: { id: deviceId },
+      });
+
+      return { success: true, message: "Device berhasil dihapus" };
+    } catch (e: any) {
+      return fail(500, { error: e.message });
+    }
+  },
 };
